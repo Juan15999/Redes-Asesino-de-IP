@@ -2,20 +2,32 @@
 import socket
 import sys
 
-Linea =  "192.168.33.15 Hola como estas!"
-Partes = Linea.split(" ", 1)
-Destino = Partes[0]
-Mensaje = Partes[1]
+# Lee los argumentos
+port = int(sys.argv[1])
 
-if Destino == "*":
-    ip = "255.255.255.255"
-else: 
-    ip = socket.gethostbyname(Destino)
-
-
-#envio de mensaje#
+# Crea el socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
-sock.sendto(Mensaje.encode(), (ip, port))
+usuario = "fede" #la idea es que se cambie por el usuario que se autentique!!!
 
+ip_emisor = socket.gethostbyname(socket.gethostname())  
+
+# Loop que lee stdin
+while True:
+    linea = input()
+    partes = linea.split(" ", 1)
+    destino = partes[0]
+    mensaje = partes[1]
+
+    # Resolver ip
+    if destino == "*":                      # Se fija si es brodcast
+        ip = "255.255.255.255"
+    else:
+        ip = socket.gethostbyname(destino)
+
+    formato_del_mensaje = f"{ip_emisor} {usuario} dice: {mensaje}" #seteo el tipo de mensaje
+
+    # Enviar mensaje
+    sock.sendto(formato_del_mensaje.encode(), (ip, port))
         
