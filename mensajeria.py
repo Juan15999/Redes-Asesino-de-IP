@@ -1,17 +1,39 @@
 import socket
 import hashlib
-import os
 import sys
 import threading
 import signal
 import getpass
 from datetime import datetime
+from Emisor import start_emisor
+from Receptor import start_receptor
+from Lista_usuarios import *
+import os
 
 LARGO_MAXIMO = 255
 
-usuario = ""
-nombre_completo = ""
+#buscamos el usuario en la lista de usuarios, si no existe lo creamos, si existe pero no se autentico, lo autenticamos, si ya se autentico le damos la bienvenida
+usuario=buscar_usuario(input("Ingrese su nombre de usuario: "))
+if usuario == None:
+    print("Usuario no registrado. por favor crear nuevo usuario antes de iniciar el chat.")
+    agregar_usuario(input("Ingrese el nombre de usuario: "), input("Ingrese el nombre completo: "))
+else: 
+    if usuario.habilitado == True:   # Si el usu ya ingreso con clave
+        print(f"Bienvenido {usuario.get_nombre_completo()}!")   
+    elif usuario.habilitado == False:   # Si el usu ya ingreso pero no con clave
+        usuario.__validar_usuario__(usuario)
+    
 
+def detect_local_ip(): 
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+    except Exception:
+        ip = "127.0.0.1"
+    finally:
+        s.close()
+    return ip
 server = None
 ejecutando = True
 
@@ -173,9 +195,10 @@ def cerrar(sig, frame):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Uso: python receptor.py puerto")
+    if len(sys.argv) < 4:
+        print("Uso: python mensajeria.py <port> <ipAuth> <portAuth>")
         sys.exit(1)
+
     puerto = int(sys.argv[1])
     ip_auth = sys.argv[2]
     puerto_auth = int(sys.argv[3])
@@ -187,5 +210,16 @@ if __name__ == "__main__":
         print("Error al autenticarse.")
         sys.exit(1)
 
-    
-    iniciar_receptor(puerto)
+    # Iniciar receptor (servidor TCP) en hilo y emisor (cliente UDP) en hilo
+    hilo_receptor = threading.Thread(target=iniciar_receptor, args=(puerto,), daemon=True)
+    hilo_receptor.start()
+
+    # `autenticar` define la variable global `usuario` con el nombre
+    hilo_emisor = threading.Thread(target=Emisor.start_emisor, args=(puerto, usuario), daemon=True)
+    hilo_emisor.start()
+
+    try:
+        # Mantener el proceso principal esperando al hilo receptor
+        hilo_receptor.join()
+    except KeyboardInterrupt:
+        cerrar(None, None)

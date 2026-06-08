@@ -1,0 +1,61 @@
+import Emisor
+import Receptor
+from ParteArchivo import abrir_archivo, enviar_archivo
+from socket import socket, AF_INET, SOCK_STREAM
+import usuarios
+from Lista_usuarios import *
+import threading
+import sys  
+import signal
+import os
+import time
+from datetime import datetime
+
+print("Bienvenido, que desea hacer?")
+print("1. Agregar usuario")
+print("2. Eliminar usuario")
+print("3. Mostrar usuarios")
+print("4. Iniciar chat")
+print("5. Salir")
+print("Ingrese el numero de la opcion que desea realizar:")
+opcion = input()
+while opcion != "5":
+    if opcion == "1":
+        print("Ingrese el nombre de usuario:")
+        usuario = input()
+        print("Ingrese el nombre completo:")
+        nombre_completo = input()
+        agregar_usuario(usuario, nombre_completo)
+    elif opcion == "2":
+        print("Ingrese el nombre de usuario a eliminar:")
+        usuario = input()
+        usuario_a_eliminar = usuarios.Usuario(usuario)
+        eliminar_usuario(usuario_a_eliminar)
+    elif opcion == "3":
+        mostrar_usuarios()
+    elif opcion == "4":
+        print("Iniciando chat...")
+        if len(lista_usuarios) == 0:
+            print("No hay usuarios registrados. Por favor, agregue un usuario antes de iniciar el chat.")
+        elif (len(lista_usuarios)>0):
+            usuario = input("Ingrese su nombre de usuario: ")
+            usuario = next((u for u in lista_usuarios if u.get_usuario() == usuario), None)
+            if usuario and usuario.habilitado == False:   # Si el usu ya ingreso con clave
+                usuario.__validar_usuario__(usuario)
+            elif usuario and usuario.habilitado == True:
+                print(f"Bienvenido {usuario.get_nombre_completo()}!")   
+            else:
+                print("Usuario no registrado. Por favor, agregue su usuario antes de iniciar el chat.") 
+        try:
+            puerto = int(input("Ingrese puerto UDP para el chat: "))
+        except ValueError:
+            print("Puerto inválido. Usando 5000 por defecto.")
+            puerto = 5000
+
+        threading.Thread(target=Emisor.start_emisor, args=(puerto, usuario), daemon=True).start()
+        threading.Thread(target=Receptor.start_receptor, args=(puerto,), daemon=True).start()
+    else:
+        print("Opción inválida. Por favor, ingrese un número del 1 al 5.")
+    
+    print("\nIngrese el numero de la opcion que desea realizar:")
+    opcion = input()
