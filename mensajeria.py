@@ -7,81 +7,57 @@ import signal
 import getpass
 from datetime import datetime
 
-LARGO_MAXIMO = 255
-
-usuario = ""
+LARGO_MAXIMO    = 255
+nombre_usuario  = ""
 nombre_completo = ""
-
-server = None
-ejecutando = True
+ejecutando      = True
+server          = None
 
 def fecha_actual():
     return datetime.now().strftime("%Y.%m.%d %H:%M")
 
 def recibir(client_socket, buf):
     while True:
-        data = client_socket.recv(1024)
+        data = client_socket.recv(1)
         buf += data.decode('utf-8')
         if "\r\n" in buf:
             break
     return buf
 
-def enviar_datos(conexion, texto):
-    conexion.sendall(texto.encode('utf-8'))
-
-def enviar_archivo(file,header,elSocket):
-    elSocket.send(header.encode('utf-8')) # Ver si lo de encode va.
-    
-    # Espera OK del servidor antes de enviar el archivo
-    buf = recibir(elSocket, "")
-    buf = buf.removesuffix("\r\n")
-    print(buf)
-
-    if buf != "OK": # el servidor no manda OK
-        print("ERROR: El servidor rechazó la transferencia.")
-        elSocket.close()
-        sys.exit(1)
-    
-    tamEnviado = elSocket.sendfile(file)
-    print(f"Archivo enviado: {tamEnviado} bytes")
-
-def recibir_archivo(cliente, nombre_archivo, tamanio):
-    try:
-        with open(nombre_archivo, "wb") as archivo:
-            recibidos = 0
-            while recibidos < tamanio:
-                datos = cliente.recv(min(4096, tamanio - recibidos))
-                if not datos:
-                    break
-                archivo.write(datos)
-                recibidos += len(datos)
-        return True
-    except Exception as e:
-        print("Error:", e)
-        return False
-
-
 def convertir_a_md5(texto):
     return hashlib.md5(texto.encode()).hexdigest()
 
+def detect_local_ip():
+    # Obtiene la IP local de esta maquina
+    # Se conecta a 8.8.8.8 sin mandar nada y lee desde que IP salio
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+    except Exception:
+        ip = "127.0.0.1"
+    finally:
+        s.close()
+    return ip
 
 def autenticar(ip_servidor_auth, puerto_servidor_auth):
-    global usuario, nombre_completo
+    global nombre_usuario, nombre_completo
 
+    # Crear y conectar el socket al servidor de autenticacion
     socket_auth = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
     socket_auth.connect((ip_servidor_auth, puerto_servidor_auth))
 
+    # Leer el saludo del servidor (obligatorio para que el protocolo funcione)
     buf = ""
     buf = recibir(socket_auth, buf)
 
-    usuario = input("Usuario: ")
+    nombre_usuario = input("Usuario: ")
     contrasena     = getpass.getpass("Clave: ")
 
     contrasena_md5 = convertir_a_md5(contrasena)
-    mensaje_login  = usuario + "-" + contrasena_md5 + "\r\n"
+    mensaje_login  = nombre_usuario + "-" + contrasena_md5 + "\r\n"
     socket_auth.send(mensaje_login.encode('utf-8'))
-    
+
     buf = ""
     buf = recibir(socket_auth, buf)
     buf = buf.removesuffix("\r\n")
@@ -98,73 +74,94 @@ def autenticar(ip_servidor_auth, puerto_servidor_auth):
         socket_auth.close()
         return False
 
-def atender_cliente(cliente, direccion):
-    try:
-        encabezado = cliente.recv(1024).decode()
-        if encabezado.startswith("MSG|"):
-            partes = encabezado.split("|", 2)
-            usuario = partes[1]
-            mensaje = partes[2]
-            print(
-                f"[{fecha_actual()}] "
-                f"{direccion[0]} "
-                f"{usuario} dice: {mensaje}"
-            )
-        elif encabezado.startswith("FILE|"):
-            partes = encabezado.split("|")
-            usuario = partes[1]
-            nombre_archivo = partes[2]
-            tamanio = int(partes[3])
-            ok = recibir_archivo(
-                cliente,
-                nombre_archivo,
-                tamanio
-            )
-            if ok:
-                print(
-                    f"[{fecha_actual()}] "
-                    f"{direccion[0]} "
-                    f"<Recibido ./{nombre_archivo} de {usuario}>"
-                )
-            else:
-                print(
-                    f"[{fecha_actual()}] "
-                    f"{direccion[0]} "
-                    f"<Error Recibiendo Archivo de {usuario}>"
-                )
+def start_receptor(puerto):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(("", puerto))
 
-    except Exception as e:
-        print("Error atendiendo cliente:", e)
-    finally:
-        cliente.close()
-
-
-
-def iniciar_receptor(puerto):
-    global server
-    server = socket.socket(
-        socket.AF_INET,
-        socket.SOCK_STREAM
-    )
-    server.bind(("", puerto))
-    server.listen()
-    print(f"Escuchando en puerto {puerto}")
     while ejecutando:
         try:
-            cliente, direccion = server.accept()
-            hilo = threading.Thread(
-                target=atender_cliente,
-                args=(cliente, direccion)
-            )
-            hilo.daemon = True
-            hilo.start()
+            data, addr = sock.recvfrom(65535)
+
+            mensaje = data.decode(errors="ignore")
+            if "&file" in mensaje:
+                partes         = mensaje.split(" ")
+                ip_emisor      = partes[0]
+                usuario        = partes[1]
+                nombre_archivo = partes[3]
+
+                datos_archivo, _ = sock.recvfrom(65535)
+                try:
+                    with open(nombre_archivo, "wb") as f:
+                        f.write(datos_archivo)
+                    print("[" + fecha_actual() + "] " + ip_emisor +
+                        " <Recibido ./" + nombre_archivo + " de " + usuario + ">")
+                except Exception:
+                    print("[" + fecha_actual() + "] " + ip_emisor +
+                        " <Error Recibiendo Archivo de " + usuario + ">")
+            else:
+                print("[" + fecha_actual() + "] " + mensaje)
+
         except OSError:
             break
 
+    sock.close()
 
+def start_emisor(puerto):
+    ip_emisor = detect_local_ip()
+
+    # pura ia esto, es para mandar mensajes a cualquier IP sin importar si es local o no, y para mandar broadcast
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+
+    while ejecutando:
+        try:
+            linea = input()
+        except (EOFError, KeyboardInterrupt):
+            break
+
+        partes = linea.split(" ", 1)
+        if len(partes) < 2:
+            print("Formato invalido. Tiene que ser: <destino> <mensaje>")
+            continue
+
+        destino = partes[0]
+        mensaje = partes[1]
+
+        # esto hay que mirarlo bien, no se si es asi
+        if destino == "*":
+            ip = "255.255.255.255"
+        else:
+            try:
+                ip = socket.gethostbyname(destino)
+            except socket.gaierror:
+                print("Error: no se pudo resolver " + destino)
+                continue
+
+        # si manda mensaje con &file manda un archivo, sino es mensaje
+        if mensaje.startswith("&file"):
+            path           = mensaje.split(" ", 1)[1]
+            nombre_archivo = path.split("/")[-1]
+            try:
+                with open(path, "rb") as f:
+                    datos = f.read()
+                # mandamos el encabezado
+                encabezado = (ip_emisor + " " + nombre_usuario + " &file " + nombre_archivo).encode()
+                sock.sendto(encabezado, (ip, puerto))
+                # mandamos el contenido del archivo
+                sock.sendto(datos, (ip, puerto))
+            except FileNotFoundError:
+                print("Error: no se encontro el archivo " + path)
+        else:
+            formato_mensaje = ip_emisor + " " + nombre_usuario + " dice: " + mensaje[:LARGO_MAXIMO]
+            sock.sendto(formato_mensaje.encode(), (ip, puerto))
+
+    sock.close()
+
+
+# control + c
 def cerrar(sig, frame):
     global ejecutando
-    print("\nCTRL+C recibido. Cerrando sesión...")
+    print("\nCTRL + C Recibido.... Cerrando Sesion")
     ejecutando = False
     if server:
         server.close()
@@ -172,20 +169,24 @@ def cerrar(sig, frame):
 
 
 
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Uso: python receptor.py puerto")
-        sys.exit(1)
-    puerto = int(sys.argv[1])
-    ip_auth = sys.argv[2]
-    puerto_auth = int(sys.argv[3])
+if len(sys.argv) != 4:
+    print("Uso: python3 mensajeria.py port ipAuth portAuth")
+    sys.exit(1)
 
-    signal.signal(signal.SIGINT, cerrar)
-    signal.signal(signal.SIGTERM, cerrar)
+puerto_local = int(sys.argv[1])
+ip_auth      = sys.argv[2]
+puerto_auth  = int(sys.argv[3])
 
-    if not autenticar(ip_auth, puerto_auth):
-        print("Error al autenticarse.")
-        sys.exit(1)
+# Registrar senales
+signal.signal(signal.SIGINT,  cerrar)
+signal.signal(signal.SIGTERM, cerrar)
 
-    
-    iniciar_receptor(puerto)
+if not autenticar(ip_auth, puerto_auth):
+    sys.exit(1)
+
+hilo_receptor = threading.Thread(target=start_receptor, args=(puerto_local,))
+hilo_receptor.daemon = True
+hilo_receptor.start()
+
+# Emisor en el hilo principal
+start_emisor(puerto_local)
