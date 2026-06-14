@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 
+# Integrantes:
+# - Juan Cabot 5049456-2
+# - Adrian Pique 4896224-9
+# - Alejo Focco 5492450-9
+# - Bruno Borges 5395353-1
+# - Federico Gianfagna 5488775-1
+
 import socket
 import hashlib
 import os
@@ -72,8 +79,6 @@ def autenticar(ip_servidor_auth, puerto_servidor_auth):
         socket_auth.close()
         return False
 
-# ── Receptor UDP (mensajes de texto) ────────────────────────────────────────
-
 def start_receptor_udp(puerto):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind(("", puerto))
@@ -87,8 +92,6 @@ def start_receptor_udp(puerto):
             break
 
     sock.close()
-
-# ── Receptor TCP (archivos) ──────────────────────────────────────────────────
 
 def atender_tcp(cliente, direccion):
     try:
@@ -116,11 +119,11 @@ def atender_tcp(cliente, direccion):
                 recibidos += len(chunk)
 
         print("[" + fecha_actual() + "] " + direccion[0] +
-              " <Recibido ./" + nombre_archivo + " de " + usuario + ">")
+            " <Recibido ./" + nombre_archivo + " de " + usuario + ">")
 
     except Exception as e:
         print("[" + fecha_actual() + "] " + direccion[0] +
-              " <Error Recibiendo Archivo de " + (partes[1] if len(partes) > 1 else "?") + ">")
+            " <Error Recibiendo Archivo de " + (partes[1] if len(partes) > 1 else "?") + ">")
     finally:
         cliente.close()
 
@@ -139,8 +142,6 @@ def start_receptor_tcp(puerto):
             hilo.start()
         except OSError:
             break
-
-# ── Emisor ───────────────────────────────────────────────────────────────────
 
 def start_emisor(puerto):
     ip_emisor = detect_local_ip()
@@ -172,7 +173,7 @@ def start_emisor(puerto):
                 continue
 
         if mensaje.startswith("&file"):
-            # Envío de archivo por TCP
+            # Envio de archivo por TCP
             partes_file    = mensaje.split(" ", 1)
             if len(partes_file) < 2:
                 print("Formato invalido. Tiene que ser: <destino> &file <path>")
@@ -205,14 +206,13 @@ def start_emisor(puerto):
                 print("Error enviando archivo: " + str(e))
 
         else:
-            # Envío de mensaje de texto por UDP
+            # Envio de mensaje de texto por UDP
             formato_mensaje = ip_emisor + " " + nombre_usuario + " dice: " + mensaje[:LARGO_MAXIMO]
             sock_udp.sendto(formato_mensaje.encode(), (ip, puerto))
 
     sock_udp.close()
 
-# ── Señales ──────────────────────────────────────────────────────────────────
-
+# termina cuando pone CTRL + C
 def cerrar(_, __):
     global ejecutando
     print("\nCTRL + C Recibido.... Cerrando Sesion")
@@ -220,8 +220,6 @@ def cerrar(_, __):
     if server_tcp:
         server_tcp.close()
     sys.exit(0)
-
-# ── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
     if len(sys.argv) != 4:
@@ -248,7 +246,7 @@ def main():
     hilo_tcp.daemon = True
     hilo_tcp.start()
 
-    # Emisor en hilo principal
+    # Emisor en hilo principal, cuando este termina se cierran los receptores
     start_emisor(puerto_local)
 
 if __name__ == "__main__":
