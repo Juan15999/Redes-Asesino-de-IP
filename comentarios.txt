@@ -1,0 +1,11 @@
+Errores:
+- Nos encontramos problemas a la hora de compartir archivos mediante tcp/udp debido a los tamaños de los archivos como por ejemplo las fotos
+- Trabajar desde el archivo redes-auth, nos encontramos problemas con el firewall de las PC's para dejar abierto el puerto indicado
+
+
+arreglos:
+- Modificamos la forma de envio dependiendo del tamaño del mismo
+- Buscamos un comando que nos abre el puerto de forma "confiable" para poder comunicarnos por el puerto bindeado, de igual forma no pudimos conectarnos bien por el programa redes-auth
+
+Comentarios:
+- Pudimos conectarnos la mayoria de las veces cuando ejecutamos el programa de esta forma : ./mensajeria.py 22764 ti.esi.edu.uy 33
