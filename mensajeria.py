@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import socket
 import hashlib
 import os
@@ -80,7 +82,8 @@ def start_receptor(puerto):
 
     while ejecutando:
         try:
-            data, addr = sock.recvfrom(65535)
+            data, _ = sock.recvfrom(65535)
+            # cuando pones _ lo toma como que no importa y no lo guarda.
 
             mensaje = data.decode(errors="ignore")
             if "&file" in mensaje:
@@ -109,8 +112,10 @@ def start_receptor(puerto):
 def start_emisor(puerto):
     ip_emisor = detect_local_ip()
 
-    # pura ia esto, es para mandar mensajes a cualquier IP sin importar si es local o no, y para mandar broadcast
+    # creamos el socket para enviar mensajes, es un socket UDP
+    # el socket se configura para permitir broadcast, lo que permite enviar mensajes a todas las maquinas de la red local usando la IP
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # para poder enviar mandar a toda la red
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
     while ejecutando:
@@ -159,7 +164,9 @@ def start_emisor(puerto):
 
 
 # control + c
-def cerrar(sig, frame):
+# le pones _ y __ porque si o si necesita que le mandes dos variables, pero no se usan
+# cosas de python
+def cerrar(_, __):
     global ejecutando
     print("\nCTRL + C Recibido.... Cerrando Sesion")
     ejecutando = False
@@ -167,26 +174,31 @@ def cerrar(sig, frame):
         server.close()
     sys.exit(0)
 
+def main():
+    if len(sys.argv) != 4:
+        print("Uso: python3 mensajeria.py port ipAuth portAuth")
+        sys.exit(1)
 
+    puerto_local = int(sys.argv[1])
+    ip_auth      = sys.argv[2]
+    puerto_auth  = int(sys.argv[3])
 
-if len(sys.argv) != 4:
-    print("Uso: python3 mensajeria.py port ipAuth portAuth")
-    sys.exit(1)
+    # registrar senales, control c
+    signal.signal(signal.SIGINT,  cerrar)
+    signal.signal(signal.SIGTERM, cerrar)
 
-puerto_local = int(sys.argv[1])
-ip_auth      = sys.argv[2]
-puerto_auth  = int(sys.argv[3])
+    if not autenticar(ip_auth, puerto_auth):
+        sys.exit(1)
 
-# Registrar senales
-signal.signal(signal.SIGINT,  cerrar)
-signal.signal(signal.SIGTERM, cerrar)
+    # lanzar receptor en hilo separado
+    # el receptor escucha en un hilo separado
+    hilo_receptor = threading.Thread(target=start_receptor, args=(puerto_local,))
+    hilo_receptor.daemon = True
+    # el hilo del receptor se marca como daemon para que termine automaticamente cuando el hilo principal termine
+    hilo_receptor.start()
 
-if not autenticar(ip_auth, puerto_auth):
-    sys.exit(1)
+    # el emisor es el hilo principal
+    start_emisor(puerto_local)
 
-hilo_receptor = threading.Thread(target=start_receptor, args=(puerto_local,))
-hilo_receptor.daemon = True
-hilo_receptor.start()
-
-# Emisor en el hilo principal
-start_emisor(puerto_local)
+if __name__ == "__main__":
+    main()
