@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
 # Integrantes:
-# - Juan Cabot 5049456-2
-# - Adrian Pique 4896224-9
-# - Alejo Focco 5492450-9
 # - Bruno Borges 5395353-1
+# - Juan Cabot 5049456-2
+# - Alejo Focco 5492450-9
 # - Federico Gianfagna 5488775-1
+# - Adrian Pique 4896224-9
+
 
 import socket
 import hashlib
@@ -95,7 +96,7 @@ def start_receptor_udp(puerto):
 
 def atender_tcp(cliente, direccion):
     try:
-        # Leer encabezado byte a byte hasta encontrar \r\n
+        # Lee el encabezado byte a byte hasta encontrar \r\n
         encabezado = b""
         while not encabezado.endswith(b"\r\n"):
             byte = cliente.recv(1)
@@ -212,7 +213,7 @@ def start_emisor(puerto):
 
     sock_udp.close()
 
-# termina cuando pone CTRL + C
+# termina cuando se apreta CTRL + C
 def cerrar(_, __):
     global ejecutando
     print("\nCTRL + C Recibido.... Cerrando Sesion")
@@ -236,12 +237,12 @@ def main():
     if not autenticar(ip_auth, puerto_auth):
         sys.exit(1)
 
-    # Receptor UDP en hilo separado
+    # Hilo receptor UDP
     hilo_udp = threading.Thread(target=start_receptor_udp, args=(puerto_local,))
     hilo_udp.daemon = True
     hilo_udp.start()
 
-    # Receptor TCP en hilo separado
+    # Hilo receptor TCP
     hilo_tcp = threading.Thread(target=start_receptor_tcp, args=(puerto_local,))
     hilo_tcp.daemon = True
     hilo_tcp.start()
