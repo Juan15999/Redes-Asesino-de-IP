@@ -13,7 +13,7 @@ LARGO_MAXIMO    = 255
 nombre_usuario  = ""
 nombre_completo = ""
 ejecutando      = True
-server          = None
+server_tcp      = None
 
 def fecha_actual():
     return datetime.now().strftime("%Y.%m.%d %H:%M")
@@ -30,8 +30,6 @@ def convertir_a_md5(texto):
     return hashlib.md5(texto.encode()).hexdigest()
 
 def detect_local_ip():
-    # Obtiene la IP local de esta maquina
-    # Se conecta a 8.8.8.8 sin mandar nada y lee desde que IP salio
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.connect(("8.8.8.8", 80))
@@ -45,11 +43,9 @@ def detect_local_ip():
 def autenticar(ip_servidor_auth, puerto_servidor_auth):
     global nombre_usuario, nombre_completo
 
-    # Crear y conectar el socket al servidor de autenticacion
     socket_auth = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     socket_auth.connect((ip_servidor_auth, puerto_servidor_auth))
 
-    # Leer el saludo del servidor (obligatorio para que el protocolo funcione)
     buf = ""
     buf = recibir(socket_auth, buf)
 
@@ -76,47 +72,81 @@ def autenticar(ip_servidor_auth, puerto_servidor_auth):
         socket_auth.close()
         return False
 
-def start_receptor(puerto):
+# ── Receptor UDP (mensajes de texto) ────────────────────────────────────────
+
+def start_receptor_udp(puerto):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind(("", puerto))
 
     while ejecutando:
         try:
             data, _ = sock.recvfrom(65535)
-            # cuando pones _ lo toma como que no importa y no lo guarda.
-
             mensaje = data.decode(errors="ignore")
-            if "&file" in mensaje:
-                partes         = mensaje.split(" ")
-                ip_emisor      = partes[0]
-                usuario        = partes[1]
-                nombre_archivo = partes[3]
-
-                datos_archivo, _ = sock.recvfrom(65535)
-                try:
-                    with open(nombre_archivo, "wb") as f:
-                        f.write(datos_archivo)
-                    print("[" + fecha_actual() + "] " + ip_emisor +
-                        " <Recibido ./" + nombre_archivo + " de " + usuario + ">")
-                except Exception:
-                    print("[" + fecha_actual() + "] " + ip_emisor +
-                        " <Error Recibiendo Archivo de " + usuario + ">")
-            else:
-                print("[" + fecha_actual() + "] " + mensaje)
-
+            print("[" + fecha_actual() + "] " + mensaje)
         except OSError:
             break
 
     sock.close()
 
+# ── Receptor TCP (archivos) ──────────────────────────────────────────────────
+
+def atender_tcp(cliente, direccion):
+    try:
+        # Leer encabezado byte a byte hasta encontrar \r\n
+        encabezado = b""
+        while not encabezado.endswith(b"\r\n"):
+            byte = cliente.recv(1)
+            if not byte:
+                break
+            encabezado += byte
+
+        partes         = encabezado.decode().strip().split("|")
+        # Formato: FILE|usuario|nombre_archivo|tamanio
+        usuario        = partes[1]
+        nombre_archivo = partes[2]
+        tamanio        = int(partes[3])
+
+        with open(nombre_archivo, "wb") as f:
+            recibidos = 0
+            while recibidos < tamanio:
+                chunk = cliente.recv(min(4096, tamanio - recibidos))
+                if not chunk:
+                    break
+                f.write(chunk)
+                recibidos += len(chunk)
+
+        print("[" + fecha_actual() + "] " + direccion[0] +
+              " <Recibido ./" + nombre_archivo + " de " + usuario + ">")
+
+    except Exception as e:
+        print("[" + fecha_actual() + "] " + direccion[0] +
+              " <Error Recibiendo Archivo de " + (partes[1] if len(partes) > 1 else "?") + ">")
+    finally:
+        cliente.close()
+
+def start_receptor_tcp(puerto):
+    global server_tcp
+    server_tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_tcp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_tcp.bind(("", puerto))
+    server_tcp.listen()
+
+    while ejecutando:
+        try:
+            cliente, direccion = server_tcp.accept()
+            hilo = threading.Thread(target=atender_tcp, args=(cliente, direccion))
+            hilo.daemon = True
+            hilo.start()
+        except OSError:
+            break
+
+# ── Emisor ───────────────────────────────────────────────────────────────────
+
 def start_emisor(puerto):
     ip_emisor = detect_local_ip()
 
-    # creamos el socket para enviar mensajes, es un socket UDP
-    # el socket se configura para permitir broadcast, lo que permite enviar mensajes a todas las maquinas de la red local usando la IP
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    # para poder enviar mandar a toda la red
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    sock_udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock_udp.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
     while ejecutando:
         try:
@@ -132,7 +162,6 @@ def start_emisor(puerto):
         destino = partes[0]
         mensaje = partes[1]
 
-        # esto hay que mirarlo bien, no se si es asi
         if destino == "*":
             ip = "255.255.255.255"
         else:
@@ -142,37 +171,57 @@ def start_emisor(puerto):
                 print("Error: no se pudo resolver " + destino)
                 continue
 
-        # si manda mensaje con &file manda un archivo, sino es mensaje
         if mensaje.startswith("&file"):
-            path           = mensaje.split(" ", 1)[1]
+            # Envío de archivo por TCP
+            partes_file    = mensaje.split(" ", 1)
+            if len(partes_file) < 2:
+                print("Formato invalido. Tiene que ser: <destino> &file <path>")
+                continue
+            path           = partes_file[1]
             nombre_archivo = path.split("/")[-1]
+
+            if destino == "*":
+                print("Error: no se puede enviar archivos por broadcast.")
+                continue
+
             try:
-                with open(path, "rb") as f:
-                    datos = f.read()
-                # mandamos el encabezado
-                encabezado = (ip_emisor + " " + nombre_usuario + " &file " + nombre_archivo).encode()
-                sock.sendto(encabezado, (ip, puerto))
-                # mandamos el contenido del archivo
-                sock.sendto(datos, (ip, puerto))
+                tamanio = os.path.getsize(path)
             except FileNotFoundError:
                 print("Error: no se encontro el archivo " + path)
+                continue
+
+            try:
+                sock_tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock_tcp.connect((ip, puerto))
+
+                encabezado = "FILE|" + nombre_usuario + "|" + nombre_archivo + "|" + str(tamanio) + "\r\n"
+                sock_tcp.send(encabezado.encode())
+
+                with open(path, "rb") as f:
+                    sock_tcp.sendfile(f)
+
+                sock_tcp.close()
+            except Exception as e:
+                print("Error enviando archivo: " + str(e))
+
         else:
+            # Envío de mensaje de texto por UDP
             formato_mensaje = ip_emisor + " " + nombre_usuario + " dice: " + mensaje[:LARGO_MAXIMO]
-            sock.sendto(formato_mensaje.encode(), (ip, puerto))
+            sock_udp.sendto(formato_mensaje.encode(), (ip, puerto))
 
-    sock.close()
+    sock_udp.close()
 
+# ── Señales ──────────────────────────────────────────────────────────────────
 
-# control + c
-# le pones _ y __ porque si o si necesita que le mandes dos variables, pero no se usan
-# cosas de python
 def cerrar(_, __):
     global ejecutando
     print("\nCTRL + C Recibido.... Cerrando Sesion")
     ejecutando = False
-    if server:
-        server.close()
+    if server_tcp:
+        server_tcp.close()
     sys.exit(0)
+
+# ── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
     if len(sys.argv) != 4:
@@ -183,21 +232,23 @@ def main():
     ip_auth      = sys.argv[2]
     puerto_auth  = int(sys.argv[3])
 
-    # registrar senales, control c
     signal.signal(signal.SIGINT,  cerrar)
     signal.signal(signal.SIGTERM, cerrar)
 
     if not autenticar(ip_auth, puerto_auth):
         sys.exit(1)
 
-    # lanzar receptor en hilo separado
-    # el receptor escucha en un hilo separado
-    hilo_receptor = threading.Thread(target=start_receptor, args=(puerto_local,))
-    hilo_receptor.daemon = True
-    # el hilo del receptor se marca como daemon para que termine automaticamente cuando el hilo principal termine
-    hilo_receptor.start()
+    # Receptor UDP en hilo separado
+    hilo_udp = threading.Thread(target=start_receptor_udp, args=(puerto_local,))
+    hilo_udp.daemon = True
+    hilo_udp.start()
 
-    # el emisor es el hilo principal
+    # Receptor TCP en hilo separado
+    hilo_tcp = threading.Thread(target=start_receptor_tcp, args=(puerto_local,))
+    hilo_tcp.daemon = True
+    hilo_tcp.start()
+
+    # Emisor en hilo principal
     start_emisor(puerto_local)
 
 if __name__ == "__main__":

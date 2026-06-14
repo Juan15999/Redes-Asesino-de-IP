@@ -25,5 +25,5 @@ def enviar_archivo(file,header,elSocket):
     
     tamEnviado = elSocket.sendfile(file)
     print(f"Archivo enviado: {enviados} bytes")
-def abrir_archivo(path): #usando open, devuelve el tamanio del archivo
+#def abrir_archivo(path): #usando open, devuelve el tamanio del archivo
 #def crearHeader(tipo,tamanio): # Ver si se tiene que poner el username 
