@@ -8,7 +8,7 @@ port = int(sys.argv[1])
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
-usuario = "fede"                            # La idea es que se cambie por el usuario que se autentique
+usuario = "user"                            # La idea es que se cambie por el usuario que se autentique
 
 ip_emisor = socket.gethostbyname(socket.gethostname())  
 
