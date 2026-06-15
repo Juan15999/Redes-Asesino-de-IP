@@ -1,11 +1,15 @@
 Errores:
-- Nos encontramos problemas a la hora de compartir archivos mediante TCP/UDP debido a los tamaños de los archivos, como por ejemplo las fotos
-- Al trabajar desde el archivo redes-auth, nos encontramos problemas con el firewall de las PCs para dejar abierto el puerto indicado
-
+-   Nos encontramos problemas a la hora de compartir archivos mediante TCP/UDP debido a los tamaños de los archivos, especialmente al enviar imagenes. Inicialmente intentamos enviar archivos utilizando UDP, lo que hacia que no funcionara de forma correcta.
+- Al trabajar desde el archivo redes-auth, nos encontramos problemas con el firewall de las PCs para dejar abierto el puerto indicado y asi permitir las conexiones al puerto.
+- Al ejecutar el programa desde WSL (linux), nos dio problemas con la IP, ya que tiene una ip interna propia, lo que nos dificultaba acceder desde otra maquina
+- La funcion recibir() al principio la teniamos con recv(1024). Esto hacia que leyera mas de una linea enviada por el servidor, provocando errores.
 
 Arreglos:
-- Modificamos la forma de envío, dependiendo del tamaño del mismo
-- Buscamos un comando que nos abra el puerto de forma "confiable" para poder comunicarnos por el puerto bindeado, de igual forma no pudimos conectarnos bien por el programa redes-auth
+- Modificamos la forma de envío para utilizar UDP unicamente para mensajes det texto y TCP para el envio de archivos, asi no nos generaba problemas a la hora de querer enviar archivos.
+- El problema con el recibir() con recv(1024), lo solucionamos tomando de a un byte con recv(1), haciendo que lea hasta encontrar \r\n, asi lee por linea.
 
 Comentarios:
-- Pudimos conectarnos la mayoria de las veces cuando ejecutamos el programa de esta forma : ./mensajeria.py 22764 ti.esi.edu.uy 33
+- Pudimos conectarnos la mayoria de las veces cuando ejecutamos el programa de esta forma : ./mensajeria.py 22764 ti.esi.edu.uy 33.
+- Logramos ejecutar ./redes-auth en una terminal en un equipo y conectarnos con otro equipo a este mismo a traves del puerto designado.
+- Se usa UDP para mensajes de texto y se utiliza TCP para el envio de archivos para garantizar que lleguen bien
+- Para poder enviar y recibir mensajes y archivo, utilizamos hilos. El hilo principal maneja el emisor y dos hilos secundarios que son los que reciben mensajes UDP y archivos TCP en paralelo.
